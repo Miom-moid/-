@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>لوحة تحكم المدير - مطعم لذيذ</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            primary: '#f97316',
+            secondary: '#ea580c',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    .status-new { @apply bg-blue-100 text-blue-800; }
+    .status-prep { @apply bg-yellow-100 text-yellow-800; }
+    .status-done { @apply bg-green-100 text-green-800; }
+    .status-canceled { @apply bg-red-100 text-red-800; }
+  </style>
+</head>
+<body class="bg-gray-100 text-gray-800 min-h-screen">
+
+  <div class="container mx-auto px-4 py-8 max-w-7xl">
+    <!-- Header -->
+    <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+      <div class="flex flex-col md:flex-row justify-between items-start md:items-center">
+        <div>
+          <h1 class="text-3xl font-bold text-gray-800 flex items-center">
+            <i class="fas fa-lock text-orange-500 mr-2"></i>
+            لوحة تحكم المدير
+          </h1>
+          <p class="text-gray-600 mt-1">إدارة الطلبات وقائمة الطعام</p>
+        </div>
+        <div class="mt-4 md:mt-0 flex space-x-4 space-x-reverse">
+          <button onclick="exportToExcel()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm flex items-center">
+            <i class="fas fa-file-excel mr-1"></i> تصدير Excel
+          </button>
+          <button onclick="refreshOrders()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm flex items-center">
+            <i class="fas fa-sync mr-1"></i> تحديث
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="grid md:grid-cols-4 gap-4 mb-6">
+      <div class="bg-white p-4 rounded-xl shadow text-center">
+        <div class="text-2xl font-bold text-blue-600" id="totalOrders">0</div>
+        <div class="text-gray-600">إجمالي الطلبات</div>
+      </div>
+      <div class="bg-white p-4 rounded-xl shadow text-center">
+        <div class="text-2xl font-bold text-orange-600" id="newOrders">0</div>
+        <div class="text-gray-600">طلبات جديدة</div>
+      </div>
+      <div class="bg-white p-4 rounded-xl shadow text-center">
+        <div class="text-2xl font-bold text-yellow-600" id="preparingOrders">0</div>
+        <div class="text-gray-600">تحت التحضير</div>
+      </div>
+      <div class="bg-white p-4 rounded-xl shadow text-center">
+        <div class="text-2xl font-bold text-green-600" id="completedOrders">0</div>
+        <div class="text-gray-600">تم التوصيل</div>
+      </div>
+    </div>
+
+    <!-- Orders Table -->
+    <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+      <div class="p-4 border-b bg-gray-50">
+        <h2 class="text-xl font-bold">قائمة الطلبات</h2>
+        <p class="text-gray-600 text-sm">آخر تحديث: <span id="lastUpdate">جاري التحميل...</span></p>
+      </div>
+      
+      <div class="overflow-x-auto">
+        <table class="w-full">
+          <thead class="bg-gray-100">
+            <tr>
+              <th class="px-4 py-3 text-right text-sm font-bold">الرقم</th>
+              <th class="px-4 py-3 text-right text-sm font-bold">العميل</th>
+              <th class="px-4 py-3 text-right text-sm font-bold">الوجبة</th>
+              <th class="px-4 py-3 text-right text-sm font-bold">الكمية</th>
+              <th class="px-4 py-3 text-right text-sm font-bold">الإجمالي</th>
+              <th class="px-4 py-3 text-right text-sm font-bold">الوسيلة</th>
+              <th class="px-4 py-3 text-right text-sm font-bold">الحالة</th>
+              <th class="px-4 py-3 text-right text-sm font-bold">الإجراءات</th>
+            </tr>
+          </thead>
+          <tbody id="ordersTableBody">
+            <!-- سيتم تعبئتها بالجافاسكريبت -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Empty State -->
+    <div id="emptyState" class="text-center py-16 hidden">
+      <i class="fas fa-box-open text-gray-400 text-6xl mb-4"></i>
+      <p class="text-xl text-gray-500">لا توجد طلبات بعد</p>
+    </div>
+  </div>
+
+  <script>
+    // تحميل الطلبات
+    function loadOrders() {
+      const orders = JSON.parse(localStorage.getItem('makanat_orders') || '[]').reverse();
+      const tableBody = document.getElementById('ordersTableBody');
+      const emptyState = document.getElementById('emptyState');
+      tableBody.innerHTML = '';
+      
+      if (orders.length === 0) {
+        emptyState.classList.remove('hidden');
+        document.getElementById('totalOrders').textContent = '0';
+        document.getElementById('newOrders').textContent = '0';
+        document.getElementById('preparingOrders').textContent = '0';
+        document.getElementById('completedOrders').textContent = '0';
+        return;
+      }
+      
+      emptyState.classList.add('hidden');
+      
+      // تحديث الإحصائيات
+      const stats = {
+        total: orders.length,
+        new: orders.filter(o => o.status === 'جديد').length,
+        preparing: orders.filter(o => o.status === 'تحت التحضير').length,
+        completed: orders.filter(o => o.status === 'تم التوصيل').length
+      };
+      
+      document.getElementById('totalOrders').textContent = stats.total;
+      document.getElementById('newOrders').textContent = stats.new;
+      document.getElementById('preparingOrders').textContent = stats.preparing;
+      document.getElementById('completedOrders').textContent = stats.completed;
+      
+      // عرض الطلبات
+      orders.forEach(order => {
+        const row = document.createElement('tr');
+        row.className = 'border-b hover:bg-gray-50';
+        row.innerHTML = `
+          <td class="px-4 py-3 text-sm">${order.id}</td>
+          <td class="px-4 py-3">
+            <div class="font-medium">${order.name}</div>
+            <div class="text-gray-600 text-sm">${order.phone}</div>
+          </td>
+          <td class="px-4 py-3">
+            <div class="font-medium">${order.mealName}</div>
+            <div class="text-gray-600 text-sm">${order.extras}</div>
+          </td>
+          <td class="px-4 py-3 text-sm">${order.quantity}</td>
+          <td class="px-4 py-3 font-bold">${order.total} ر.س</td>
+          <td class="px-4 py-3 text-sm">${order.delivery}</td>
+          <td class="px-4 py-3">
+            <span class="status-${order.status === 'جديد' ? 'new' : order.status === 'تحت التحضير' ? 'prep' : order.status === 'تم التوصيل' ? 'done' : 'canceled'} 
+                   px-2 py-1 rounded-full text-xs font-medium">
+              ${order.status}
+            </span>
+          </td>
+          <td class="px-4 py-3">
+            <select onchange="updateStatus(${order.id}, this.value)" class="border border-gray-300 rounded px-2 py-1 text-xs">
+              <option value="جديد" ${order.status === 'جديد' ? 'selected' : ''}>جديد</option>
+              <option value="تحت التحضير" ${order.status === 'تحت التحضير' ? 'selected' : ''}>تحت التحضير</option>
+              <option value="تم التوصيل" ${order.status === 'تم التوصيل' ? 'selected' : ''}>تم التوصيل</option>
+            </select>
+          </td>
+        `;
+        tableBody.appendChild(row);
+      });
+      
+      // تحديث وقت آخر تحديث
+      document.getElementById('lastUpdate').textContent = new Date().toLocaleString('ar-SA');
+    }
+
+    // تحديث حالة الطلب
+    function updateStatus(orderId, newStatus) {
+      let orders = JSON.parse(localStorage.getItem('makanat_orders') || '[]');
+      orders = orders.map(order => 
+        order.id == orderId ? { ...order, status: newStatus } : order
+      );
+      localStorage.setItem('makanat_orders', JSON.stringify(orders));
+      loadOrders();
+    }
+
+    // تصدير إلى Excel
+    function exportToExcel() {
+      const orders = JSON.parse(localStorage.getItem('makanat_orders') || '[]');
+      if (orders.length === 0) return alert('لا توجد طلبات للتصدير');
+
+      let csv = 'الرقم,العميل,الجوال,الوجبة,الكمية,السعر,الإجمالي,الإضافات,الوسيلة,العنوان,طريقة الدفع,الحالة,التاريخ\n';
+      
+      orders.forEach(order => {
+        csv += `"${order.id}","${order.name}","${order.phone}","${order.mealName}","${order.quantity}","${order.mealPrice}","${order.total}","${order.extras}","${order.delivery}","${order.address}","${order.payment}","${order.status}","${new Date(order.date).toLocaleString('ar-SA')}"\n`;
+      });
+
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `طلبات_مطعم_لذيذ_${new Date().toLocaleDateString('ar-SA')}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
+    // تحديث الطلبات
+    function refreshOrders() {
+      loadOrders();
+    }
+
+    // تحميل الطلبات عند التحميل
+    loadOrders();
+
+    // تحديث تلقائي كل 30 ثانية
+    setInterval(loadOrders, 30000);
+
+    // الاستماع للطلبات الجديدة من النافذة الأصلية
+    window.addEventListener('message', function(e) {
+      if (e.data.type === 'NEW_ORDER') {
+        loadOrders();
+        // إظهار إشعار
+        if (Notification.permission === 'granted') {
+          new Notification('طلب جديد!', {
+            body: `طلب جديد من ${e.data.order.name}`,
+            icon: 'https://via.placeholder.com/50'
+          });
+        }
+      }
+    });
+
+    // طلب إذن الإشعارات
+    if (Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+      Notification.requestPermission();
+    }
+  </script>
+</body>
+</html>
